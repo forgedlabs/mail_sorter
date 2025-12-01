@@ -55,7 +55,10 @@ export async function validateWithServer(emails) {
             body: JSON.stringify({ emails })
         });
 
-        if (!response.ok) throw new Error('Server error');
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Server returned ${response.status}: ${errorText}`);
+        }
 
         const data = await response.json();
 
@@ -72,8 +75,14 @@ export async function validateWithServer(emails) {
         }));
     } catch (error) {
         console.error('Validation error:', error);
-        // Fallback to client-side validation results if server fails
-        return emails.map(email => ({ ...validateEmail(email), reason: 'Server Error' }));
+        // Return detailed error reason
+        const reason = error.message.includes('Failed to fetch')
+            ? 'Network Error - Cannot reach backend'
+            : error.message.includes('Server returned')
+                ? error.message
+                : 'Unknown Error';
+
+        return emails.map(email => ({ ...validateEmail(email), reason }));
     }
 }
 
