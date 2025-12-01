@@ -47,8 +47,9 @@ export function processBatch(text) {
 
 export async function validateWithServer(emails) {
     try {
-        // Use production Go backend
-        const response = await fetch('http://localhost:8080/v1/validate/batch', {
+        // Use production Go backend or environment variable
+        const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+        const response = await fetch(`${API_URL}/v1/validate/batch`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ emails })
