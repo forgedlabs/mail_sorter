@@ -1,0 +1,31 @@
+# Fly.io configuration for mail_sorter Go backend API
+app = 'mail-sorter-api'
+primary_region = 'cdg'
+
+[build]
+  dockerfile = 'services/verifier/Dockerfile'
+
+[env]
+  SERVER_PORT = "8080"
+  REDIS_HOST = "mail-sorter-redis.internal"
+  CONFIG_PATH = "/etc/validator/config.yaml"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ['app']
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/health"
+
+[[vm]]
+  memory = '512mb'
+  cpu_kind = 'shared'
+  cpus = 1

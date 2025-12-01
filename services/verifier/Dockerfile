@@ -7,7 +7,7 @@ RUN apk add --no-cache git ca-certificates
 WORKDIR /app
 
 # Copy go mod files
-COPY services/verifier/go.mod services/verifier/go.sum* ./
+COPY services/verifier/go.mod services/verifier/go.sum ./
 
 # Download dependencies
 RUN go mod download
@@ -29,8 +29,8 @@ WORKDIR /root/
 # Copy binary from builder
 COPY --from=builder /app/verifier .
 
-# Copy config (optional)
-COPY config/config.yaml /etc/validator/config.yaml
+# Copy config (optional, will use env vars if not present)
+COPY config/config.yaml /etc/validator/config.yaml 2>/dev/null || true
 
 # Expose ports
 EXPOSE 8080 9090
