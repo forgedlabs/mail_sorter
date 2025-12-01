@@ -1,0 +1,566 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: email-validator
+
+---
+# ConfigMap for application configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: validator-config
+  namespace: email-validator
+data:
+  config.yaml: |
+    server:
+      port: 8080
+    smtp:
+      ehlo_hostname: mail-validator.production.com
+      mail_from: verify@production.com
+    workers:
+      pool_size: 1000
+    # See config/config.yaml for full configuration
+
+---
+# Secret for sensitive data
+apiVersion: v1
+kind: Secret
+metadata:
+  name: validator-secrets
+  namespace: email-validator
+type: Opaque
+stringData:
+  db-password: "CHANGE_ME"
+  redis-password: ""
+  jwt-secret: "CHANGE_ME"
+
+---
+# PostgreSQL Deployment
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgresql
+  namespace: email-validator
+spec:
+  serviceName: postgresql
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgresql
+  template:
+    metadata:
+      labels:
+        app: postgresql
+    spec:
+      containers:
+      - name: postgresql
+        image: postgres:15
+        ports:
+        - containerPort: 5432
+          name: postgres
+        env:
+        - name: POSTGRES_DB
+          value: email_validation
+        - name: POSTGRES_USER
+          value: email_validator_app
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: validator-secrets
+              key: db-password
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        volumeMounts:
+        - name: postgres-storage
+          mountPath: /var/lib/postgresql/data
+        resources:
+          requests:
+            cpu: 2000m
+            memory: 8Gi
+          limits:
+            cpu: 4000m
+            memory: 16Gi
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-storage
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 500Gi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgresql
+  namespace: email-validator
+spec:
+  selector:
+    app: postgresql
+  ports:
+  - port: 5432
+    targetPort: 5432
+  clusterIP: None
+
+---
+# Redis Deployment
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis
+  namespace: email-validator
+spec:
+  serviceName: redis
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+      - name: redis
+        image: redis:7-alpine
+        ports:
+        - containerPort: 6379
+          name: redis
+        command:
+        - redis-server
+        - --maxmemory
+        - "8gb"
+        - --maxmemory-policy
+        - allkeys-lru
+        - --appendonly
+        - "yes"
+        volumeMounts:
+        - name: redis-storage
+          mountPath: /data
+        resources:
+          requests:
+            cpu: 1000m
+            memory: 8Gi
+          limits:
+            cpu: 2000m
+            memory: 10Gi
+  volumeClaimTemplates:
+  - metadata:
+      name: redis-storage
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 50Gi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: email-validator
+spec:
+  selector:
+    app: redis
+  ports:
+  - port: 6379
+    targetPort: 6379
+
+---
+# API Service Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-service
+  namespace: email-validator
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: api-service
+  template:
+    metadata:
+      labels:
+        app: api-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: api
+        image: your-registry/email-validator-api:latest
+        ports:
+        - containerPort: 8080
+          name: http
+        - containerPort: 9090
+          name: metrics
+        env:
+        - name: DATABASE_HOST
+          value: postgresql
+        - name: REDIS_HOST
+          value: redis
+        - name: DATABASE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: validator-secrets
+              key: db-password
+        volumeMounts:
+        - name: config
+          mountPath: /etc/validator
+          readOnly: true
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        resources:
+          requests:
+            cpu: 500m
+            memory: 512Mi
+          limits:
+            cpu: 1000m
+            memory: 1Gi
+      volumes:
+      - name: config
+        configMap:
+          name: validator-config
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-service
+  namespace: email-validator
+spec:
+  selector:
+    app: api-service
+  ports:
+  - port: 80
+    targetPort: 8080
+    name: http
+  - port: 9090
+    targetPort: 9090
+    name: metrics
+  type: ClusterIP
+
+---
+# Orchestrator Service Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orchestrator
+  namespace: email-validator
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: orchestrator
+  template:
+    metadata:
+      labels:
+        app: orchestrator
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      containers:
+      - name: orchestrator
+        image: your-registry/email-validator-orchestrator:latest
+        ports:
+        - containerPort: 9090
+          name: metrics
+        env:
+        - name: REDIS_HOST
+          value: redis
+        - name: DATABASE_HOST
+          value: postgresql
+        - name: DATABASE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: validator-secrets
+              key: db-password
+        volumeMounts:
+        - name: config
+          mountPath: /etc/validator
+        resources:
+          requests:
+            cpu: 1000m
+            memory: 1Gi
+          limits:
+            cpu: 2000m
+            memory: 2Gi
+      volumes:
+      - name: config
+        configMap:
+          name: validator-config
+
+---
+# SMTP Verification Workers Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: smtp-workers
+  namespace: email-validator
+spec:
+  replicas: 10
+  selector:
+    matchLabels:
+      app: smtp-workers
+  template:
+    metadata:
+      labels:
+        app: smtp-workers
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      containers:
+      - name: worker
+        image: your-registry/email-validator-worker:latest
+        ports:
+        - containerPort: 9090
+          name: metrics
+        env:
+        - name: REDIS_HOST
+          value: redis
+        - name: DATABASE_HOST
+          value: postgresql
+        - name: DATABASE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: validator-secrets
+              key: db-password
+        - name: WORKER_POOL_SIZE
+          value: "1000"
+        volumeMounts:
+        - name: config
+          mountPath: /etc/validator
+        resources:
+          requests:
+            cpu: 1000m
+            memory: 256Mi
+          limits:
+            cpu: 2000m
+            memory: 512Mi
+      volumes:
+      - name: config
+        configMap:
+          name: validator-config
+
+---
+# Horizontal Pod Autoscaler for API Service
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api-service-hpa
+  namespace: email-validator
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api-service
+  minReplicas: 3
+  maxReplicas: 50
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  - type: Pods
+    pods:
+      metric:
+        name: email_validator_api_requests_active
+      target:
+        type: AverageValue
+        averageValue: "100"
+
+---
+# Horizontal Pod Autoscaler for Workers
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: smtp-workers-hpa
+  namespace: email-validator
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: smtp-workers
+  minReplicas: 10
+  maxReplicas: 100
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Pods
+    pods:
+      metric:
+        name: email_validator_queue_depth
+      target:
+        type: AverageValue
+        averageValue: "500"
+
+---
+# Ingress Configuration
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: api-ingress
+  namespace: email-validator
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  tls:
+  - hosts:
+    - api.mail-validator.com
+    secretName: api-tls-cert
+  rules:
+  - host: api.mail-validator.com
+    http:
+      paths:
+      - path: /v1
+        pathType: Prefix
+        backend:
+          service:
+            name: api-service
+            port:
+              number: 80
+
+---
+# PodDisruptionBudget for API Service
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: api-service-pdb
+  namespace: email-validator
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: api-service
+
+---
+# NetworkPolicy - Allow egress for SMTP (port 25)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: smtp-egress
+  namespace: email-validator
+spec:
+  podSelector:
+    matchLabels:
+      app: smtp-workers
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+        - 10.0.0.0/8
+        - 192.168.0.0/16
+    ports:
+    - protocol: TCP
+      port: 25
+    - protocol: TCP
+      port: 53
+  - to:
+    - podSelector:
+        matchLabels:
+          app: redis
+    ports:
+    - protocol: TCP
+      port: 6379
+  - to:
+    - podSelector:
+        matchLabels:
+          app: postgresql
+    ports:
+    - protocol: TCP
+      port: 5432
+
+---
+# ServiceMonitor for Prometheus Operator
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: email-validator
+  namespace: email-validator
+  labels:
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: api-service
+  endpoints:
+  - port: metrics
+    interval: 30s
+    path: /metrics
+
+---
+# PrometheusRule for Alerting
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: email-validator-alerts
+  namespace: email-validator
+spec:
+  groups:
+  - name: email_validator
+    interval: 30s
+    rules:
+    - alert: HighErrorRate
+      expr: |
+        (sum(rate(email_validator_api_requests_total{status=~"5.."}[5m])) /
+         sum(rate(email_validator_api_requests_total[5m]))) > 0.05
+      for: 5m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Email validator high error rate"
+        description: "Error rate is {{ $value | humanizePercentage }}"
+    
+    - alert: HighLatency
+      expr: |
+        histogram_quantile(0.95,
+          sum(rate(email_validator_validation_duration_seconds_bucket[5m])) by (le)
+        ) > 5
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Email validator high latency"
+        description: "P95 latency is {{ $value }}s"
+    
+    - alert: QueueDepthHigh
+      expr: email_validator_queue_depth > 10000
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Queue depth high"
+        description: "Queue depth is {{ $value }}"

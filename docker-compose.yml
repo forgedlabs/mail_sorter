@@ -1,0 +1,113 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: email-validator-postgres
+    environment:
+      POSTGRES_DB: email_validation
+      POSTGRES_USER: email_validator_app
+      POSTGRES_PASSWORD: devpassword
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U email_validator_app -d email_validation"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - email-validator-network
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: email-validator-redis
+    command: >
+      redis-server
+      --maxmemory 1gb
+      --maxmemory-policy allkeys-lru
+      --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - email-validator-network
+
+  # Go SMTP Verifier Service
+  smtp-verifier:
+    build:
+      context: .
+      dockerfile: services/verifier/Dockerfile
+    container_name: email-validator-verifier
+    ports:
+      - "8080:8080"
+      - "9090:9090"  # Metrics
+    environment:
+      - DATABASE_HOST=postgres
+      - DATABASE_PORT=5432
+      - DATABASE_USER=email_validator_app
+      - DATABASE_PASSWORD=devpassword
+      - DATABASE_NAME=email_validation
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - SERVER_PORT=8080
+      - METRICS_PORT=9090
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - email-validator-network
+    restart: unless-stopped
+
+  # Optional: Redis Commander (GUI for Redis)
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: email-validator-redis-gui
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
+    networks:
+      - email-validator-network
+    profiles:
+      - debug
+
+  # Optional: pgAdmin (GUI for PostgreSQL)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: email-validator-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@email-validator.local
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    networks:
+      - email-validator-network
+    profiles:
+      - debug
+
+networks:
+  email-validator-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local

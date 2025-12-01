@@ -1,0 +1,481 @@
+openapi: 3.0.3
+info:
+  title: Email Validation API
+  description: Production-ready email deliverability validation service
+  version: 1.0.0
+  contact:
+    email: support@mail-validator.com
+
+servers:
+  - url: https://api.mail-validator.com/v1
+    description: Production server
+  - url: https://staging-api.mail-validator.com/v1
+    description: Staging server
+  - url: http://localhost:8080/v1
+    description: Development server
+
+security:
+  - ApiKeyAuth: []
+
+tags:
+  - name: Validation
+    description: Email validation endpoints
+  - name: Jobs
+    description: Batch job management
+  - name: Health
+    description: Service health and status
+
+paths:
+  /validate:
+    post:
+      tags:
+        - Validation
+      summary: Validate single email address
+      description: Performs full validation including syntax, DNS/MX, SMTP handshake, and catch-all detection
+      operationId: validateEmail
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: user@example.com
+                  description: Email address to validate
+                skip_cache:
+                  type: boolean
+                  default: false
+                  description: Force fresh validation, bypass cache
+      responses:
+        '200':
+          description: Validation completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationResult'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized - invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /validate/batch:
+    post:
+      tags:
+        - Validation
+      summary: Validate batch of email addresses
+      description: Submits a batch validation job. Results are processed asynchronously.
+      operationId: validateBatch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - emails
+              properties:
+                emails:
+                  type: array
+                  items:
+                    type: string
+                    format: email
+                  minItems: 1
+                  maxItems: 100000
+                  example: ["user1@example.com", "user2@example.com"]
+                  description: Array of email addresses to validate
+                priority:
+                  type: string
+                  enum: [express, standard, bulk]
+                  default: standard
+                  description: Processing priority
+                webhook_url:
+                  type: string
+                  format: uri
+                  example: https://client.com/webhook
+                  description: Optional webhook URL for completion notification
+                metadata:
+                  type: object
+                  description: Optional custom metadata
+      responses:
+        '202':
+          description: Batch job accepted and queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchJobResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /jobs/{job_id}:
+    get:
+      tags:
+        - Jobs
+      summary: Get job status and results
+      description: Retrieve status and results for a batch validation job
+      operationId: getJob
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+      responses:
+        '200':
+          description: Job details retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobStatus'
+        '404':
+          description: Job not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /jobs/{job_id}/results:
+    get:
+      tags:
+        - Jobs
+      summary: Download job results
+      description: Download complete results for a finished job
+      operationId: getJobResults
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [json, csv]
+            default: json
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10000
+            default: 1000
+      responses:
+        '200':
+          description: Results retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ValidationResult'
+                  total:
+                    type: integer
+                  offset:
+                    type: integer
+                  limit:
+                    type: integer
+            text/csv:
+              schema:
+                type: string
+        '404':
+          description: Job not found or not completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /results/{email}:
+    get:
+      tags:
+        - Validation
+      summary: Retrieve cached validation result
+      description: Get cached validation result for an email address (if available)
+      operationId: getCachedResult
+      parameters:
+        - name: email
+          in: path
+          required: true
+          schema:
+            type: string
+            format: email
+          example: user@example.com
+      responses:
+        '200':
+          description: Cached result found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationResult'
+        '404':
+          description: No cached result found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Health check
+      description: Check service health status
+      operationId: healthCheck
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  version:
+                    type: string
+                    example: 1.0.0
+                  timestamp:
+                    type: string
+                    format: date-time
+                  checks:
+                    type: object
+                    properties:
+                      database:
+                        type: boolean
+                      redis:
+                        type: boolean
+                      queue:
+                        type: boolean
+
+  /metrics:
+    get:
+      tags:
+        - Health
+      summary: Prometheus metrics
+      description: Prometheus-formatted metrics endpoint
+      operationId: getMetrics
+      security: []
+      responses:
+        '200':
+          description: Metrics in Prometheus format
+          content:
+            text/plain:
+              schema:
+                type: string
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for authentication
+
+  schemas:
+    ValidationResult:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          example: user@example.com
+        email_hash:
+          type: string
+          example: "abc123..."
+          description: SHA256 hash of email
+        domain:
+          type: string
+          example: example.com
+        status:
+          type: string
+          enum: [valid, invalid, catch-all, unknown, risky]
+          description: |
+            - valid: Mailbox exists and can receive email
+            - invalid: Mailbox does not exist or domain has no MX
+            - catch-all: Domain accepts all emails (mailbox may not exist)
+            - unknown: Could not determine (temp failure, timeout)
+            - risky: Disposable, suspicious, or high-risk domain
+        reason:
+          type: string
+          example: mailbox_exists
+          description: Detailed reason for the status
+        confidence:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          example: 0.98
+          description: Confidence score (0-1)
+        smtp_code:
+          type: integer
+          example: 250
+          description: SMTP response code from RCPT TO
+        smtp_response:
+          type: string
+          example: "Recipient OK"
+          description: Full SMTP response message
+        mx_host:
+          type: string
+          example: mx1.example.com
+          description: MX host that was queried
+        mx_records:
+          type: array
+          items:
+            $ref: '#/components/schemas/MXRecord'
+        is_catch_all:
+          type: boolean
+          description: Whether domain is catch-all
+        is_disposable:
+          type: boolean
+          description: Whether domain is disposable/temporary
+        validation_duration_ms:
+          type: integer
+          example: 1250
+          description: Validation duration in milliseconds
+        checked_at:
+          type: string
+          format: date-time
+          example: "2025-11-20T16:00:00Z"
+
+    MXRecord:
+      type: object
+      properties:
+        exchange:
+          type: string
+          example: mx1.example.com
+        priority:
+          type: integer
+          example: 10
+
+    BatchJobResponse:
+      type: object
+      properties:
+        job_id:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        status:
+          type: string
+          example: pending
+        total_emails:
+          type: integer
+          example: 1000
+        priority:
+          type: string
+          example: standard
+        estimated_completion:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+
+    JobStatus:
+      type: object
+      properties:
+        job_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [pending, processing, completed, failed, cancelled]
+        total_emails:
+          type: integer
+        emails_processed:
+          type: integer
+        emails_valid:
+          type: integer
+        emails_invalid:
+          type: integer
+        emails_catch_all:
+          type: integer
+        emails_unknown:
+          type: integer
+        emails_risky:
+          type: integer
+        progress_percent:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 100
+        created_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        estimated_completion:
+          type: string
+          format: date-time
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Invalid email format
+        code:
+          type: string
+          example: INVALID_INPUT
+        details:
+          type: object
+        timestamp:
+          type: string
+          format: date-time

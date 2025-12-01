@@ -1,0 +1,319 @@
+/* Import Roboto Mono for data and Inter for UI */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Roboto+Mono:wght@400;500&display=swap');
+
+:root {
+  /* True Flat / Swiss Style Colors */
+  --bg-color: #ffffff;
+  --surface-color: #ffffff;
+  /* No gray backgrounds */
+  --border-color: #000000;
+  /* Stark black borders */
+  --text-primary: #000000;
+  --text-secondary: #555555;
+  --accent-color: #000000;
+
+  /* Status Colors (High Contrast) */
+  --success-color: #008000;
+  /* Pure Green */
+  --error-color: #ff0000;
+  /* Pure Red */
+  --warning-color: #ff8c00;
+  /* Dark Orange */
+  --unknown-color: #f59e0b;
+  /* Amber/Orange */
+
+  /* Spacing */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+
+  /* Typography */
+  --font-ui: 'Inter', sans-serif;
+  --font-mono: 'Roboto Mono', monospace;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-ui);
+  background-color: var(--bg-color);
+  color: var(--text-primary);
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+}
+
+#root {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Utilities */
+.btn {
+  padding: 10px 20px;
+  border: 2px solid var(--border-color);
+  /* Thicker border */
+  border-radius: 0 !important;
+  /* Sharp edges */
+  background: white;
+  color: black;
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-weight: 700;
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  transition: all 0.1s;
+}
+
+.btn:hover {
+  background: black;
+  color: white;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: white !important;
+  color: black !important;
+}
+
+.btn-primary {
+  background: black;
+  color: white;
+}
+
+.btn-primary:hover {
+  background: white;
+  color: black;
+}
+
+.btn-danger {
+  border-color: var(--error-color);
+  color: var(--error-color);
+}
+
+.btn-danger:hover {
+  background: var(--error-color);
+  color: white;
+}
+
+.btn-success {
+  border-color: var(--success-color);
+  color: var(--success-color);
+}
+
+.btn-success:hover {
+  background: var(--success-color);
+  color: white;
+}
+
+.layout-split {
+  display: flex;
+  flex: 1;
+  height: 100%;
+  overflow: hidden;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-md);
+  overflow: hidden;
+}
+
+.panel-left {
+  width: 40%;
+  border-right: 2px solid var(--border-color);
+  /* Thicker separator */
+  background: var(--surface-color);
+}
+
+.panel-right {
+  flex: 1;
+  background: var(--bg-color);
+}
+
+.header-bar {
+  padding: var(--space-sm) 0;
+  /* Remove horizontal padding to align with text */
+  margin-bottom: var(--space-md);
+  border-bottom: 2px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: white;
+}
+
+h2 {
+  font-size: 1.2rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+textarea {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  padding: var(--space-sm);
+  border: 2px solid var(--border-color);
+  border-radius: 0 !important;
+  resize: none;
+  outline: none;
+  background: #fff;
+  color: black;
+}
+
+textarea:focus {
+  background: #fdfdfd;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #fff;
+  border-left: 2px solid black;
+}
+
+::-webkit-scrollbar-thumb {
+  background: black;
+  border: 2px solid white;
+}
+
+/* Domain Filter Styles */
+.domain-filter {
+  border-bottom: 2px solid var(--border-color);
+  background: var(--surface-color);
+}
+
+.domain-filter-header {
+  padding: 12px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.1s;
+}
+
+.domain-filter-header:hover {
+  background: #fafafa;
+}
+
+.domain-filter-header h3 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 0;
+}
+
+.toggle-icon {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+}
+
+.domain-filter-content {
+  padding: 0 16px 16px 16px;
+}
+
+.domain-filter-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: 0.85rem;
+}
+
+.btn-link {
+  background: none;
+  border: none;
+  color: var(--accent-color);
+  cursor: pointer;
+  text-decoration: underline;
+  font-family: var(--font-ui);
+  font-weight: 600;
+  padding: 0;
+  font-size: 0.85rem;
+}
+
+.btn-link:hover {
+  opacity: 0.7;
+}
+
+.filter-count {
+  color: var(--text-secondary);
+  font-weight: 600;
+  margin-left: 4px;
+}
+
+.domain-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.domain-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  border: 1px solid transparent;
+  transition: all 0.1s;
+}
+
+.domain-item:hover {
+  background: #f5f5f5;
+  border-color: var(--border-color);
+}
+
+.domain-item input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  border: 2px solid var(--border-color);
+  border-radius: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  background: white;
+  position: relative;
+}
+
+.domain-item input[type="checkbox"]:checked {
+  background: black;
+}
+
+.domain-item input[type="checkbox"]:checked::after {
+  content: "✓";
+  color: white;
+  font-size: 12px;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.domain-name {
+  flex: 1;
+  color: var(--text-primary);
+}
+
+.domain-count {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
